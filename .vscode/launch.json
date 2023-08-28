@@ -1,0 +1,24 @@
+{
+    "configurations": [
+        {
+            "name": "Python: main.py",
+            "type": "python",
+            "request": "launch",
+            "program": "/Users/dingluran/Projects/网页信息检索/main.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--target",
+                "m",
+                "--page",
+                "http://ai.ruc.edu.cn,https://rdzs.ruc.edu.cn/",
+                "--depth",
+                "5",
+                "--thread",
+                "0",
+                "--html_dir",
+                "html",
+            ],
+            "justMyCode": true
+        }
+    ]
+}
