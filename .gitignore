@@ -1,0 +1,8 @@
+__pycache__/
+.pytest_cache/
+.vscode/
+all_html/
+cache/
+IR-evaluator-client/
+html/
+stopwords/

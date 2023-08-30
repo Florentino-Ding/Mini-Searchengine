@@ -15,7 +15,9 @@ def get_args() -> dict[str, Union[str, list[str], int]]:
 
     try:
         opt_list, args = getopt.getopt(
-            sys.argv[1:], "", ["target=", "page=", "depth=", "thread=", "html_dir="]
+            sys.argv[1:],
+            "",
+            ["target=", "page=", "scope=", "thread=", "html_dir="],
         )
     except getopt.GetoptError:
         print("GetoptError")
@@ -27,16 +29,22 @@ def get_args() -> dict[str, Union[str, list[str], int]]:
         elif opt == "--page":
             arg = arg.split(",")
             arg_dict["page"] = arg
-        elif opt == "--depth":
-            arg_dict["depth"] = int(arg)
-        elif opt == "--thread":
-            arg_dict["thread"] = int(arg)
+        elif opt == "--scope":
+            arg = arg.split(",")
+            arg_dict["scope"] = arg
         elif opt == "--html_dir":
             arg_dict["html_dir"] = arg
-    assert "target" in arg_dict and "page" in arg_dict and "depth" in arg_dict
+    assert "target" in arg_dict and "page" in arg_dict
     if "thread" not in arg_dict:
         arg_dict["thread"] = 0
     return arg_dict
+
+
+def url_in_scope(url: str, scope: list[str]) -> bool:
+    for item in scope:
+        if item in url:
+            return True
+    return False
 
 
 def url_norm(url: str) -> str:
@@ -58,10 +66,11 @@ def clean_front(url: str) -> str:
 
 
 def clean_rear(url: str) -> str:
-    if url.endswith("index.html"):
-        return url[:-10]
-    elif url.endswith("index.htm"):
-        return url[:-9]
+    import re
+
+    if url.endswith("html") or url.endswith("htm"):
+        url_list = url.split("/")
+        return "/".join(url_list[:-1]) + "/"
     elif url.endswith(".com") or url.endswith(".cn"):
         return url + "/"
     else:
@@ -72,7 +81,7 @@ def url_join(base_url: str, rear: Optional[str] = None) -> str:
     base_url = clean_rear(base_url)
     base_url = url_norm(base_url)
     if rear:
-        rear = clean_rear(rear)
+        # rear = clean_rear(rear)
         if rear.startswith("/"):
             rear = rear[1:]
         if base_url.endswith("/"):
@@ -117,13 +126,14 @@ def get_text(html: bs4.BeautifulSoup) -> str:
     return html.text
 
 
-def process_html(html: bs4.BeautifulSoup) -> tuple[str, str]:
-    def process_text(text: str) -> str:
-        text = text.replace("\n", "")
-        text = text.replace("\t", "")
-        text = text.replace(" ", "")
-        return text
+def process_text(text: str) -> str:
+    text = text.replace("\n", "")
+    text = text.replace("\t", "")
+    text = text.replace(" ", "")
+    return text
 
+
+def process_html(html: bs4.BeautifulSoup) -> tuple[str, str]:
     title = get_title(html)
     text = get_text(html)
     return process_text(title), process_text(text)

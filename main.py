@@ -1,8 +1,7 @@
 import os
-import threading
 
 from utils import get_args
-from index_processing import crawl, text_transformer, indexing_processor
+from index_processor import WebCrawl, TextTransformer, IndexMaker
 
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -12,12 +11,18 @@ os.chdir(BASE_DIR)
 
 if __name__ == "__main__":
     arg_dict = get_args()
-    t = text_transformer(arg_dict["html_dir"])
-    if not t.load_html(arg_dict["html_dir"], cache_dir="cache/HTML.pkl"):
+    t = TextTransformer(arg_dict["html_dir"], "cache", "cache", "cache", "stopwords")
+    index_maker = IndexMaker("cache")
+    if not t.load_html(arg_dict["html_dir"], cache_dir="cache"):
         print("No html files found.", end=" ")
-        input("Press any key to start crawl.")
+        input("Press any key to start crawling...")
         for start_url in arg_dict["page"]:
-            robot = crawl(start_url, HEADERS, arg_dict["depth"], arg_dict["thread"])
+            robot = WebCrawl(
+                start_url,
+                arg_dict["scope"],
+                HEADERS,
+            )
             robot.run()
-        assert t.load_from_memory()
-    t.make_dict("cache/word_dict.pkl")
+    assert t.load_html_from_memory()
+    t.make_term_index("cache")
+    t.load_stopwords("stopwords/baidu_stopwords.txt")
