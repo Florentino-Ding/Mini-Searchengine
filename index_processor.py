@@ -1,5 +1,5 @@
 import os
-from typing import Optional, Union
+from typing import Literal, Optional, Union
 import requests
 import bs4
 
@@ -181,7 +181,7 @@ class WebCrawl:
         print("[INFO] Finished, successfully crawled {} pages.".format(len(HTML)))
         return
 
-    def run(self) -> None:
+    def crawl(self) -> None:
         self._webBFS(self.start_url)
         return
 
@@ -191,17 +191,13 @@ class TextTransformer:
         self,
         html_database: str,
         cache_dir: str,
-        wordsdict_dir: str,
-        term_index_dir: str,
         stopwords_dir: Optional[str] = None,
     ):
         self.html_database = html_database
         self.cache_dir = cache_dir
-        self.wordsdict_dir = wordsdict_dir
-        self.term_index_dir = term_index_dir
         self.stopwords_dir = stopwords_dir
 
-    def load_html(
+    def _load_html_from_disk(
         self, html_database: Optional[str] = None, cache_dir: Optional[str] = None
     ) -> bool:
         import pickle
@@ -210,10 +206,17 @@ class TextTransformer:
         if not cache_dir:
             cache_dir = self.cache_dir
         if cache_dir and os.path.exists(cache_dir + "/HTML.pkl"):
-            print("[INFO] Found cached HTML, loading...")
-            HTML.update(pickle.load(open(cache_dir + "/HTML.pkl", "rb")))
-            print("[INFO] Already loaded, totally {} pages.".format(len(HTML)))
-            return True
+            from main import DEFAULT_CONTINUE
+
+            if not DEFAULT_CONTINUE:
+                r = input("[INFO] Found cached HTML, load it? (y/n)")
+            if DEFAULT_CONTINUE or r == "y" or r == "Y":
+                print("[INFO] Loading cached HTML...")
+                HTML.update(pickle.load(open(cache_dir + "/HTML.pkl", "rb")))
+                print("[INFO] Already loaded, totally {} pages.".format(len(HTML)))
+                return True
+            else:
+                print("[INFO] Ignored cached HTML, remaking it...")
         if not html_database:
             html_database = self.html_database
         assert os.path.exists(html_database)
@@ -226,7 +229,6 @@ class TextTransformer:
                 with open(os.path.join(root, file), "r", encoding="utf-8") as f:
                     html = bs4.BeautifulSoup(f.read(), "html.parser")
                     cleaned_url = clean_front(os.path.join(root, file))
-                    print(cleaned_url)
                     HTML[cleaned_url] = html
         if not HTML:
             return False
@@ -237,7 +239,51 @@ class TextTransformer:
         )
         return True
 
-    def load_html_from_memory(
+    def _load_all_html_from_disk(
+        self,
+        html_database: str = "all_html",
+        reflection_path: str = "reflection.json",
+        cache_dir: Optional[str] = None,
+    ) -> bool:
+        import pickle
+        import json
+        from tqdm import tqdm
+
+        from utils import clean_file_format
+
+        assert os.path.exists(html_database) and os.path.exists(reflection_path)
+
+        if cache_dir and os.path.exists(cache_dir + "/HTML.pkl"):
+            from main import DEFAULT_CONTINUE
+
+            if not DEFAULT_CONTINUE:
+                r = input("[INFO] Found cached HTML, load it? (y/n)")
+            if DEFAULT_CONTINUE or r == "y" or r == "Y":
+                print("[INFO] Loading cached HTML...")
+                HTML.update(pickle.load(open(cache_dir + "/HTML.pkl", "rb")))
+                print("[INFO] Already loaded, totally {} pages.".format(len(HTML)))
+                return True
+            else:
+                print("[INFO] Ignored cached HTML, remaking it...")
+        with open(reflection_path, "r", encoding="utf-8") as f:
+            reflection = json.load(f)
+            reflection = dict(reflection)
+        for file in tqdm(os.listdir(html_database), desc="Loading files: "):
+            with open(os.path.join(html_database, file), "r", encoding="utf-8") as f:
+                html = bs4.BeautifulSoup(f.read(), "html.parser")
+                url = reflection[clean_file_format(file)]
+                HTML[url] = html
+        if not HTML:
+            return False
+        if cache_dir:
+            print("[INFO] Saving HTML to cache...")
+            pickle.dump(HTML, open(cache_dir + "/HTML.pkl", "wb"))
+        print(
+            "[INFO] Process finished, successfully loaded {} pages.".format(len(HTML))
+        )
+        return True
+
+    def _load_html_from_memory(
         self,
         show_info: bool = False,
     ) -> bool:
@@ -246,32 +292,67 @@ class TextTransformer:
         if len(HTML) == 0:
             return False
         if show_info:
-            print("[INFO] Already loaded, totally {} pages.".format(len(HTML)))
+            print(
+                "[INFO] Already loaded into memory, totally {} pages.".format(len(HTML))
+            )
         return True
 
-    def load_wordsdict(self, wordsdict_dir: str) -> bool:
-        import pickle
-
-        if not os.path.exists(wordsdict_dir + "/wordsdict.pkl"):
-            print("[INFO] No cached words dictionary found.")
-            return False
-        print("[INFO] Found cached dictionary, loading...")
-        self.wordsdict = pickle.load(open(wordsdict_dir + "/wordsdict.pkl", "rb"))
-        print("[INFO] Totally {} words in dictionary.".format(len(self.wordsdict)))
-        return True
-
-    def load_term_index(self, term_index_dir: str) -> bool:
+    def _load_term_index_from_disk(self, term_index_dir: str) -> bool:
         import pickle
 
         if not os.path.exists(term_index_dir + "/term_index.pkl"):
             print("[INFO] No cached term index found.")
-            return False
-        print("[INFO] Found cached term index, loading...")
-        self.term_index = pickle.load(open(term_index_dir + "/term_index.pkl", "rb"))
-        print("[INFO] Totally {} tokens were detected.".format(len(self.term_index)))
+            raise FileNotFoundError
+        else:
+            if not hasattr(self, "term_index") or not self.term_index_dict:
+                self.term_index_dict = pickle.load(
+                    open(term_index_dir + "/term_index.pkl", "rb")
+                )
+                self.term_index_title, self.term_index, self.term_index_anchor = (
+                    self.term_index_dict["title"],
+                    self.term_index_dict["text"],
+                    self.term_index_dict["anchor"],
+                )
+            if not hasattr(self, "index2url") or not self.index2url:
+                self.index2url = pickle.load(
+                    open(term_index_dir + "/index2url.pkl", "rb")
+                )
+            if not hasattr(self, "term_frequency") or not self.term_frequency:
+                self.term_frequency = pickle.load(
+                    open(term_index_dir + "/term_frequency.pkl", "rb")
+                )
+            print(
+                "[INFO] Totally {} tokens were detected.".format(len(self.term_index))
+            )
+            return True
+
+    def _load_term_index_from_memory(self) -> bool:
+        if (
+            not hasattr(self, "term_index")
+            or not self.term_index_dict
+            or not hasattr(self, "index2url")
+            or not self.index2url
+            or not hasattr(self, "term_frequency")
+            or not self.term_frequency
+        ):
+            from main import DEFAULT_CONTINUE
+
+            if not DEFAULT_CONTINUE:
+                r = input("[INFO] No term index found in memory, load it from disk? (y/n)")
+            if DEFAULT_CONTINUE or r == "y" or r == "Y":
+                if not self._load_term_index_from_disk(self.cache_dir):
+                    self.make_term_index(self.cache_dir)
+            else:
+                return False
+        else:
+            print(
+                "[INFO] Totally {} tokens were detected in memory.".format(
+                    len(self.term_index)
+                )
+            )
         return True
 
-    def load_stopwords(self, stopwords_dir: Optional[str] = None) -> bool:
+    def _load_stopwords(self, stopwords_dir: Optional[str] = None) -> bool:
         if not stopwords_dir:
             assert self.stopwords_dir
             stopwords_dir = self.stopwords_dir
@@ -283,83 +364,123 @@ class TextTransformer:
         print("[INFO] Totally {} stopwords.".format(len(self.stopwords)))
         return True
 
-    def make_term_index(self, save_dir: str, in_place=True):
+    def make_term_index(self, save_dir: str):
         import pickle
-        from collections import defaultdict
         import jieba
         from tqdm import tqdm
         from utils import process_html, process_text
 
-        assert HTML
-        if self.load_term_index(save_dir):
-            return
+        if not HTML:
+            if not self._load_html_from_memory():
+                # self.transformer._load_html_from_disk()
+                self._load_all_html_from_disk(cache_dir=self.cache_dir)
+        if os.path.exists(save_dir + "/term_index.pkl"):
+            from main import DEFAULT_CONTINUE
+
+            if not DEFAULT_CONTINUE:
+                r = input("[INFO] Found cached term index, load it? (y/n)")
+            if DEFAULT_CONTINUE or r == "y" or r == "Y":
+                print("[INFO] Loading cached term index...")
+                self.term_index_dict = pickle.load(
+                    open(save_dir + "/term_index.pkl", "rb")
+                )
+                self.index2url = pickle.load(open(save_dir + "/index2url.pkl", "rb"))
+                self.term_frequency = pickle.load(
+                    open(save_dir + "/term_frequency.pkl", "rb")
+                )
+                print(
+                    "[INFO] Totally {} tokens were detected.".format(
+                        len(self.term_index_dict["text"])
+                    )
+                )
+                return
+            else:
+                print("[INFO] Ignored cached term index, remaking it...")
         self.term_index = list[tuple[str, int]]()
+        self.term_index_title = list[tuple[str, int]]()
+        self.term_index_anchor = list[tuple[str, int]]()
         self.index2url = dict[int, str]()
-        self.term_frequency = defaultdict(dict[str, int])
+        self.term_frequency = dict[int, dict[str, int]]()
         url_id = 0
         for url, html in tqdm(HTML.items(), desc="Making term-pages pairs: "):
             self.index2url[url_id] = url
 
-            title = process_html(html)[0]
-            for token in jieba.cut_for_search(title):
-                self.term_index.append((token, url_id))
-                self.term_frequency[url_id][token] = (
-                    self.term_frequency.get(url_id, dict()).get(token, 0) + 1
-                )
-            p = html.find_all("p")
-            if p:
-                for content in p:
+            head = process_html(html)[0]
+            if head:
+                for token in jieba.cut_for_search(head):
+                    self.term_index_title.append((token, url_id))
+                    if url_id not in self.term_frequency:
+                        self.term_frequency[url_id] = dict()
+                    self.term_frequency[url_id][token] = (
+                        self.term_frequency[url_id].get(token, 0) + 1
+                    )
+            content = html.get_text()
+            if content:
+                for token in jieba.cut_for_search(process_text(content)):
+                    self.term_index.append((token, url_id))
+                    if url_id not in self.term_frequency:
+                        self.term_frequency[url_id] = dict()
+                    self.term_frequency[url_id][token] = (
+                        self.term_frequency[url_id].get(token, 0) + 1
+                    )
+            anchor = html.find_all("a")
+            if anchor:
+                for content in anchor:
                     for token in jieba.cut_for_search(process_text(content.text)):
-                        self.term_index.append((token, url_id))
-                        self.term_frequency[url_id][token] = (
-                            self.term_frequency[url_id].get(token, 0) + 1
-                        )
-            h1 = html.find_all("h1")
-            if h1:
-                for content in h1:
-                    for token in jieba.cut_for_search(process_text(content.text)):
-                        self.term_index.append((token, url_id))
-                        self.term_frequency[url_id][token] = (
-                            self.term_frequency[url_id].get(token, 0) + 1
-                        )
-            h2 = html.find_all("h2")
-            if h2:
-                for content in h2:
-                    for token in jieba.cut_for_search(process_text(content.text)):
-                        self.term_index.append((token, url_id))
-                        self.term_frequency[url_id][token] = (
-                            self.term_frequency[url_id].get(token, 0) + 1
-                        )
-            a = html.find_all("a")
-            if a:
-                for content in a:
-                    for token in jieba.cut_for_search(process_text(content.text)):
-                        self.term_index.append((token, url_id))
-                        self.term_frequency[url_id][token] = (
-                            self.term_frequency[url_id].get(token, 0) + 1
-                        )
-            mate = html.find_all("mate")
-            if mate:
-                for content in mate:
-                    for token in jieba.cut_for_search(process_text(content.text)):
-                        self.term_index.append((token, url_id))
+                        self.term_index_anchor.append((token, url_id))
+                        if url_id not in self.term_frequency:
+                            self.term_frequency[url_id] = dict()
                         self.term_frequency[url_id][token] = (
                             self.term_frequency[url_id].get(token, 0) + 1
                         )
             url_id += 1
-        print("[INFO] Totally {} tokens were detected.".format(len(self.term_index)))
+        print("[INFO] Totally {} tokens were detected.".format(+len(self.term_index)))
+        self.term_index_dict = {
+            "title": self.term_index_title,
+            "text": self.term_index,
+            "anchor": self.term_index_anchor,
+        }
         if save_dir:
-            pickle.dump(self.index2url, open(save_dir + "/term_index.pkl", "wb"))
-        if not in_place:
-            return self.term_index
+            pickle.dump(self.term_index_dict, open(save_dir + "/term_index.pkl", "wb"))
+            pickle.dump(self.index2url, open(save_dir + "/index2url.pkl", "wb"))
+            pickle.dump(
+                self.term_frequency, open(save_dir + "/term_frequency.pkl", "wb")
+            )
         return None
+
+    def _using_clean_words(
+        self,
+        stopwords: Optional[set[str]] = None,
+        mode: Literal["current", "learned"] = "current",
+    ) -> None:
+        import pickle
+
+        if os.path.exists(self.cache_dir + "/" + "cleaned_term_frequency.pkl"):
+            self.cleaned_term_frequency = pickle.load(
+                open(self.cache_dir + "/" + "cleaned_term_frequency.pkl", "rb")
+            )
+        if str(mode) == "current":
+            assert stopwords
+        else:
+            stopwords = set[str]()
+            raise NotImplementedError
+        assert hasattr(self, "term_index_dict")
+        import copy
+
+        self.cleaned_term_frequency = copy.deepcopy(self.term_frequency)
+        for url_id, term_frequency in self.cleaned_term_frequency.items():
+            for word in stopwords:
+                if word in term_frequency:
+                    del term_frequency[word]
+        with open(self.cache_dir + "/" + "cleaned_term_frequency.pkl", "wb") as f:
+            pickle.dump(self.cleaned_term_frequency, f)
 
 
 class IndexMaker:
-    def __init__(self, term_index_dir: str):
-        self.term_index_dir = term_index_dir
+    def __init__(self, cache_dir: str):
+        self.cache_dir = cache_dir
 
-    def load_inverted_index(self, save_dir: str) -> bool:
+    def _load_inverted_index(self, save_dir: str) -> bool:
         import pickle
 
         if not os.path.exists(save_dir + "/inverted_index.pkl"):
@@ -377,20 +498,22 @@ class IndexMaker:
     def make_inverted_index(
         self,
         save_dir: str,
-        term_index: list[tuple[str, int]],
-        in_place=True,
+        term_index_dict: dict[str, list[tuple[str, int]]],
     ):
         import pickle
-        from collections import defaultdict
         from tqdm import tqdm
 
-        if self.load_inverted_index(save_dir):
+        if self._load_inverted_index(save_dir):
             return
-        self.inverted_index = defaultdict(set)
-        for token, url_id in tqdm(term_index, desc="Making inverted index: "):
+        self.inverted_index = dict[str, set[int]]()
+        for token, url_id in tqdm(
+            term_index_dict["text"], desc="Making text inverted index: "
+        ):
+            if not token in self.inverted_index:
+                self.inverted_index[token] = set()
             self.inverted_index[token].add(url_id)
         print(
-            "[INFO] Totally {} tokens in inverted index.".format(
+            "[INFO] Totally {} words in inverted index.".format(
                 len(self.inverted_index)
             )
         )
@@ -398,6 +521,30 @@ class IndexMaker:
             pickle.dump(
                 self.inverted_index, open(save_dir + "/inverted_index.pkl", "wb")
             )
-        if not in_place:
-            return self.inverted_index
         return None
+
+    def _using_clean_words(
+        self,
+        stopwords: Optional[set[str]] = None,
+        mode: Literal["current", "learned"] = "current",
+    ) -> None:
+        import pickle
+
+        if os.path.exists(self.cache_dir + "/" + "cleaned_inverted_index.pkl"):
+            self.cleaned_inverted_index = pickle.load(
+                open(self.cache_dir + "/" + "cleaned_inverted_index.pkl", "rb")
+            )
+        if str(mode) == "current":
+            assert stopwords
+        else:
+            stopwords = set[str]()
+            raise NotImplementedError
+        assert hasattr(self, "inverted_index")
+        import copy
+
+        self.cleaned_inverted_index = copy.deepcopy(self.inverted_index)
+        for word in stopwords:
+            if word in self.cleaned_inverted_index:
+                del self.cleaned_inverted_index[word]
+        with open(self.cache_dir + "/" + "cleaned_inverted_index.pkl", "wb") as f:
+            pickle.dump(self.cleaned_inverted_index, f)

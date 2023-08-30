@@ -1,7 +1,7 @@
 {
     "configurations": [
         {
-            "name": "Python: main.py",
+            "name": "网页信息检索：自定参数的调试",
             "type": "python",
             "request": "launch",
             "program": "/Users/dingluran/Projects/网页信息检索/main.py",
@@ -13,8 +13,6 @@
                 "https://rdzs.ruc.edu.cn/",
                 "--scope",
                 "http://ai.ruc.edu.cn,https://rdzs.ruc.edu.cn/,https://gsai.ruc.edu.cn/",
-                "--thread",
-                "50",
                 "--html_dir",
                 "html",
             ],

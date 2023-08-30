@@ -77,6 +77,10 @@ def clean_rear(url: str) -> str:
         return url
 
 
+def clean_file_format(url: str) -> str:
+    return ".".join(url.split(".")[:-1])
+
+
 def url_join(base_url: str, rear: Optional[str] = None) -> str:
     base_url = clean_rear(base_url)
     base_url = url_norm(base_url)
@@ -117,9 +121,9 @@ def simplifyPath(path: str) -> str:
 
 
 def get_title(html: bs4.BeautifulSoup):
-    if html.title is None:
+    if html.head is None:
         return ""
-    return html.title.text
+    return html.head.text
 
 
 def get_text(html: bs4.BeautifulSoup) -> str:
@@ -134,9 +138,9 @@ def process_text(text: str) -> str:
 
 
 def process_html(html: bs4.BeautifulSoup) -> tuple[str, str]:
-    title = get_title(html)
+    head = get_title(html)
     text = get_text(html)
-    return process_text(title), process_text(text)
+    return process_text(head), process_text(text)
 
 
 def save_content(page_list: dict[str, bs4.BeautifulSoup], dir: str = "") -> None:
