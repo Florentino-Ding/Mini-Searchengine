@@ -181,7 +181,7 @@ class PageRanker:
         return result_query
 
     def ranked_page(
-        self,
+        self, mode: Literal["record", "not-record"] = "not-record"
     ) -> list[str]:
         import math
         from base import DEVICE
@@ -216,9 +216,40 @@ class PageRanker:
             )
             page_rank_score[idx] = self._page_rank_score(page_url_id)
         score = self.rank_net(raw_tf_idf_score, page_rank_score)
+        if mode == "record":
+            self.last_record = {
+                "in": (raw_tf_idf_score, page_rank_score),
+                "true_ans": url_ids,
+            }
         score_dict = {url_id: s for url_id, s in zip(url_ids, score)}
         sorted_score = sorted(score_dict.items(), key=lambda x: x[1], reverse=True)
         return [self._get_url(url_id) for url_id, _ in sorted_score[: self.top_k]]
+
+    def user_feedback(self, url_id: int) -> None:
+        assert hasattr(self, "last_record")
+        assert hasattr(self, "rank_net")
+
+        if not hasattr(self, "tarin_data"):
+            self.tranin_data = list[tuple[torch.Tensor, torch.Tensor, int]]()
+        self.tranin_data.append(
+            (*self.last_record["in"], self.last_record["true_ans"].index(url_id))
+        )
+
+    def train(self, epochs: int = 100, lr: float = 0.01) -> None:
+        assert hasattr(self, "tranin_data")
+        if not hasattr(self, "optimizer"):
+            self.optimizer = torch.optim.Adam(self.rank_net.parameters(), lr=lr)
+        from tqdm import trange
+
+        for epoch in trange(epochs, desc="Training, epoch"):
+            for data in self.tranin_data:
+                self.rank_net.zero_grad()
+                loss = F.cross_entropy(
+                    self.rank_net(data[0], data[1]), torch.tensor(data[2])
+                )
+                self.optimizer.zero_grad()
+                loss.backward()
+                self.optimizer.step()
 
 
 class RankNet(nn.Module):

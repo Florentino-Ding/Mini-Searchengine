@@ -35,7 +35,13 @@ class SearchEngine(object):
         self.mode = mode
         self.tokenizer("warm up")
 
-    def warm_up_for_search(self) -> None:
+    def warm_up_for_shell(self) -> None:
+        if not hasattr(self, "transformer") or not hasattr(self, "index_maker"):
+            self._prepare_essential()
+        self._using_clean_words(self.transformer.stopwords)
+        self._prepare_word2vec()
+
+    def warm_up_for_web(self) -> None:
         if not hasattr(self, "transformer") or not hasattr(self, "index_maker"):
             self._prepare_essential()
         self._using_clean_words(self.transformer.stopwords)
@@ -54,7 +60,7 @@ class SearchEngine(object):
             self.cache_dir,
             self.stopwords_dir,
         )
-        self.transformer.prepare_essential(self.mode)
+        self.transformer.prepare_essential(self.mode)  # type: ignore
 
     def _prepare_essential(self) -> None:
         if not hasattr(self, "transformer"):
@@ -127,3 +133,46 @@ class SearchEngine(object):
         )
         result = self.page_ranker.ranked_page()
         return result
+
+    def search_for_web(
+        self,
+        user_query,
+        top_k=20,
+    ) -> list[dict[str, str]]:
+        self.user_interaction = UserInteraction(
+            self.tokenizer, user_query, top_k, "and"
+        )
+        self.page_ranker = PageRanker(
+            self.user_interaction._word_to_term(),
+            top_k,
+            self.index_maker.cleaned_inverted_index,
+            self.index_maker.cleaned_title_inverted_index,
+            self.index_maker.cleaned_anchor_inverted_index,
+            self.transformer.index2url,
+            self.transformer.cleaned_term_frequency,
+            self.transformer.cleaned_anchor_term_frequency,
+            self.index_maker.page_rank_score,  # type: ignore
+            self.word2vec_model,
+        )
+        result = self.page_ranker.ranked_page(mode="web")  # type: ignore
+        web_result = list[dict[str, str]]()
+        from index_processor import HTML
+        from utils import process_text
+
+        for url in result:
+            title = HTML[url].find("title")
+            if title is None:
+                title = "该网页未提供标题"
+            else:
+                title = process_text(title.get_text())
+                if len(title) > 40:
+                    title = title[:40] + "..."
+            summary = process_text(HTML[url].get_text())[:100]
+            web_result.append(
+                {
+                    "url": url,
+                    "title": title,
+                    "summary": summary,
+                }
+            )
+        return web_result

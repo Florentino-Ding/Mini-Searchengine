@@ -15,6 +15,7 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import path
+from django.conf.urls import url
 
 import views
 
@@ -22,5 +23,10 @@ urlpatterns = [
     path("", views.index),
     path("index.html", views.index),
     path("index.htm", views.index),
+    path("search", views.search),
+    path(
+        "track_click/",
+        views.track_click,
+    ),
     path("admin/", admin.site.urls),
 ]
