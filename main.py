@@ -1,6 +1,5 @@
 import os
 
-from utils import get_args
 from base import SearchEngine
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -8,19 +7,25 @@ HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/
 os.chdir(BASE_DIR)
 DEFAULT_CONTINUE = True
 
+engine = SearchEngine(
+    [""],
+    [""],
+    "html",
+    "cache",
+    "stopwords/baidu_stopwords.txt",
+)
+engine.warm_up_for_search()
 
-def evaluate(query: str) -> list[str]:
-    DEFAULT_CONTINUE = True
-    engine = SearchEngine(
-        [""],
-        [""],
-        "html",
-        "cache",
-        "stopwords/baidu_stopwords.txt",
-    )
-    engine._make_index()
-    return engine.search(query, using_stopwords=False)
+
+def my_evaluate(query: str) -> list[str]:
+    return engine.search(query)
 
 
 if __name__ == "__main__":
-    pass
+    while True:
+        query = input("请输入查询语句：")
+        if not query:
+            print("无效的查询语句")
+            continue
+        result = my_evaluate(query)
+        print(result)

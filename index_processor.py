@@ -161,7 +161,6 @@ class WebCrawl:
         return all_hyperlinks
 
     def _webBFS(self, start_url: str) -> None:
-        import time
         from queue import Queue
 
         url_queue = Queue()
@@ -197,6 +196,14 @@ class TextTransformer:
         self.cache_dir = cache_dir
         self.stopwords_dir = stopwords_dir
 
+    def prepare_essential(self, mode: Literal["search", "debug"] = "search") -> None:
+        if str(mode) == "debug" and not self._load_html_from_memory():
+            self._load_html_from_disk()
+        if not self._load_term_index_from_memory():
+            if not self._load_term_index_from_disk(term_index_dir=self.cache_dir):
+                self._make_term_index(self.cache_dir)
+        self._load_stopwords(self.stopwords_dir)
+
     def _load_html_from_disk(
         self, html_database: Optional[str] = None, cache_dir: Optional[str] = None
     ) -> bool:
@@ -205,12 +212,15 @@ class TextTransformer:
 
         if not cache_dir:
             cache_dir = self.cache_dir
-        if cache_dir and os.path.exists(cache_dir + "/HTML.pkl"):
+        if cache_dir and os.path.exists(cache_dir + "/HTML.pkl") and not HTML:
             from main import DEFAULT_CONTINUE
 
-            if not DEFAULT_CONTINUE:
-                r = input("[INFO] Found cached HTML, load it? (y/n)")
-            if DEFAULT_CONTINUE or r == "y" or r == "Y":
+            r = (
+                "y"
+                if DEFAULT_CONTINUE
+                else input("[INFO] Found cached HTML, load it? (y/n)")
+            )
+            if r == "y" or r == "Y":
                 print("[INFO] Loading cached HTML...")
                 HTML.update(pickle.load(open(cache_dir + "/HTML.pkl", "rb")))
                 print("[INFO] Already loaded, totally {} pages.".format(len(HTML)))
@@ -239,70 +249,76 @@ class TextTransformer:
         )
         return True
 
-    def _load_all_html_from_disk(
-        self,
-        html_database: str = "all_html",
-        reflection_path: str = "reflection.json",
-        cache_dir: Optional[str] = None,
-    ) -> bool:
-        import pickle
-        import json
-        from tqdm import tqdm
+    # def _load_all_html_from_disk(
+    #     self,
+    #     html_database: str = "all_html",
+    #     reflection_path: str = "reflection.json",
+    #     cache_dir: Optional[str] = None,
+    # ) -> bool:
+    #     import pickle
+    #     import json
+    #     from tqdm import tqdm
 
-        from utils import clean_file_format
+    #     from utils import clean_file_format
 
-        assert os.path.exists(html_database) and os.path.exists(reflection_path)
+    #     assert os.path.exists(html_database) and os.path.exists(reflection_path)
 
-        if cache_dir and os.path.exists(cache_dir + "/HTML.pkl"):
-            from main import DEFAULT_CONTINUE
+    #     if cache_dir and os.path.exists(cache_dir + "/HTML.pkl"):
+    #         from main import DEFAULT_CONTINUE
 
-            if not DEFAULT_CONTINUE:
-                r = input("[INFO] Found cached HTML, load it? (y/n)")
-            if DEFAULT_CONTINUE or r == "y" or r == "Y":
-                print("[INFO] Loading cached HTML...")
-                HTML.update(pickle.load(open(cache_dir + "/HTML.pkl", "rb")))
-                print("[INFO] Already loaded, totally {} pages.".format(len(HTML)))
-                return True
-            else:
-                print("[INFO] Ignored cached HTML, remaking it...")
-        with open(reflection_path, "r", encoding="utf-8") as f:
-            reflection = json.load(f)
-            reflection = dict(reflection)
-        for file in tqdm(os.listdir(html_database), desc="Loading files: "):
-            with open(os.path.join(html_database, file), "r", encoding="utf-8") as f:
-                html = bs4.BeautifulSoup(f.read(), "html.parser")
-                url = reflection[clean_file_format(file)]
-                HTML[url] = html
-        if not HTML:
-            return False
-        if cache_dir:
-            print("[INFO] Saving HTML to cache...")
-            pickle.dump(HTML, open(cache_dir + "/HTML.pkl", "wb"))
-        print(
-            "[INFO] Process finished, successfully loaded {} pages.".format(len(HTML))
-        )
-        return True
+    #         r = (
+    #             "y"
+    #             if DEFAULT_CONTINUE
+    #             else input("[INFO] Found cached HTML, load it? (y/n)")
+    #         )
+    #         if r == "y" or r == "Y":
+    #             print("[INFO] Loading cached HTML...")
+    #             HTML.update(pickle.load(open(cache_dir + "/HTML.pkl", "rb")))
+    #             print("[INFO] Already loaded, totally {} pages.".format(len(HTML)))
+    #             return True
+    #         else:
+    #             print("[INFO] Ignored cached HTML, remaking it...")
+    #     with open(reflection_path, "r", encoding="utf-8") as f:
+    #         reflection = json.load(f)
+    #         reflection = dict(reflection)
+    #     for file in tqdm(os.listdir(html_database), desc="Loading files: "):
+    #         with open(os.path.join(html_database, file), "r", encoding="utf-8") as f:
+    #             html = bs4.BeautifulSoup(f.read(), "html.parser")
+    #             url = reflection[clean_file_format(file)]
+    #             HTML[url] = html
+    #     if not HTML:
+    #         return False
+    #     if cache_dir:
+    #         print("[INFO] Saving HTML to cache...")
+    #         pickle.dump(HTML, open(cache_dir + "/HTML.pkl", "wb"))
+    #     print(
+    #         "[INFO] Process finished, successfully loaded {} pages.".format(len(HTML))
+    #     )
+    #     return True
 
     def _load_html_from_memory(
         self,
-        show_info: bool = False,
+        show_info: bool = True,
     ) -> bool:
         HTML.update(NEW_HTML)
         NEW_HTML.clear()
         if len(HTML) == 0:
             return False
-        if show_info:
-            print(
-                "[INFO] Already loaded into memory, totally {} pages.".format(len(HTML))
-            )
-        return True
+        else:
+            if show_info:
+                print(
+                    "[INFO] Already loaded into memory, totally {} pages.".format(
+                        len(HTML)
+                    )
+                )
+            return True
 
     def _load_term_index_from_disk(self, term_index_dir: str) -> bool:
         import pickle
 
         if not os.path.exists(term_index_dir + "/term_index.pkl"):
             print("[INFO] No cached term index found.")
-            raise FileNotFoundError
+            return False
         else:
             if not hasattr(self, "term_index") or not self.term_index_dict:
                 self.term_index_dict = pickle.load(
@@ -316,6 +332,10 @@ class TextTransformer:
             if not hasattr(self, "index2url") or not self.index2url:
                 self.index2url = pickle.load(
                     open(term_index_dir + "/index2url.pkl", "rb")
+                )
+            if not hasattr(self, "url2index") or not self.url2index:
+                self.url2index = pickle.load(
+                    open(term_index_dir + "/url2index.pkl", "rb")
                 )
             if not hasattr(self, "term_frequency") or not self.term_frequency:
                 self.term_frequency = pickle.load(
@@ -335,15 +355,7 @@ class TextTransformer:
             or not hasattr(self, "term_frequency")
             or not self.term_frequency
         ):
-            from main import DEFAULT_CONTINUE
-
-            if not DEFAULT_CONTINUE:
-                r = input("[INFO] No term index found in memory, load it from disk? (y/n)")
-            if DEFAULT_CONTINUE or r == "y" or r == "Y":
-                if not self._load_term_index_from_disk(self.cache_dir):
-                    self.make_term_index(self.cache_dir)
-            else:
-                return False
+            return False
         else:
             print(
                 "[INFO] Totally {} tokens were detected in memory.".format(
@@ -364,27 +376,27 @@ class TextTransformer:
         print("[INFO] Totally {} stopwords.".format(len(self.stopwords)))
         return True
 
-    def make_term_index(self, save_dir: str):
+    def _make_term_index(self, save_dir: str):
         import pickle
         import jieba
         from tqdm import tqdm
         from utils import process_html, process_text
 
-        if not HTML:
-            if not self._load_html_from_memory():
-                # self.transformer._load_html_from_disk()
-                self._load_all_html_from_disk(cache_dir=self.cache_dir)
         if os.path.exists(save_dir + "/term_index.pkl"):
             from main import DEFAULT_CONTINUE
 
-            if not DEFAULT_CONTINUE:
-                r = input("[INFO] Found cached term index, load it? (y/n)")
-            if DEFAULT_CONTINUE or r == "y" or r == "Y":
+            r = (
+                "y"
+                if DEFAULT_CONTINUE
+                else input("[INFO] Found cached term index, load it? (y/n)")
+            )
+            if r == "y" or r == "Y":
                 print("[INFO] Loading cached term index...")
                 self.term_index_dict = pickle.load(
                     open(save_dir + "/term_index.pkl", "rb")
                 )
                 self.index2url = pickle.load(open(save_dir + "/index2url.pkl", "rb"))
+                self.url2index = pickle.load(open(save_dir + "/url2index.pkl", "rb"))
                 self.term_frequency = pickle.load(
                     open(save_dir + "/term_frequency.pkl", "rb")
                 )
@@ -400,10 +412,12 @@ class TextTransformer:
         self.term_index_title = list[tuple[str, int]]()
         self.term_index_anchor = list[tuple[str, int]]()
         self.index2url = dict[int, str]()
+        self.url2index = dict[str, int]()
         self.term_frequency = dict[int, dict[str, int]]()
         url_id = 0
         for url, html in tqdm(HTML.items(), desc="Making term-pages pairs: "):
             self.index2url[url_id] = url
+            self.url2index[url] = url_id
 
             head = process_html(html)[0]
             if head:
@@ -443,6 +457,7 @@ class TextTransformer:
         if save_dir:
             pickle.dump(self.term_index_dict, open(save_dir + "/term_index.pkl", "wb"))
             pickle.dump(self.index2url, open(save_dir + "/index2url.pkl", "wb"))
+            pickle.dump(self.url2index, open(save_dir + "/url2index.pkl", "wb"))
             pickle.dump(
                 self.term_frequency, open(save_dir + "/term_frequency.pkl", "wb")
             )
@@ -477,8 +492,21 @@ class TextTransformer:
 
 
 class IndexMaker:
-    def __init__(self, cache_dir: str):
+    def __init__(
+        self,
+        cache_dir: str,
+        term_index_dict: dict[str, list[tuple[str, int]]],
+        url2index: dict[str, int],
+    ):
         self.cache_dir = cache_dir
+        self.term_index_dict = term_index_dict
+        self.url2index = url2index
+
+    def prepare_essential(self) -> None:
+        if not self._load_inverted_index(self.cache_dir):
+            self._make_inverted_index(self.cache_dir, self.term_index_dict)
+        if not self._load_page_rank(self.cache_dir):
+            self.make_page_rank(self.cache_dir)
 
     def _load_inverted_index(self, save_dir: str) -> bool:
         import pickle
@@ -495,7 +523,7 @@ class IndexMaker:
         )
         return True
 
-    def make_inverted_index(
+    def _make_inverted_index(
         self,
         save_dir: str,
         term_index_dict: dict[str, list[tuple[str, int]]],
@@ -503,15 +531,27 @@ class IndexMaker:
         import pickle
         from tqdm import tqdm
 
-        if self._load_inverted_index(save_dir):
-            return
         self.inverted_index = dict[str, set[int]]()
+        self.title_inverted_index = dict[str, set[int]]()
+        self.anchor_inverted_index = dict[str, set[int]]()
         for token, url_id in tqdm(
             term_index_dict["text"], desc="Making text inverted index: "
         ):
             if not token in self.inverted_index:
                 self.inverted_index[token] = set()
             self.inverted_index[token].add(url_id)
+        for token, url_id in tqdm(
+            term_index_dict["title"], desc="Making title inverted index: "
+        ):
+            if not token in self.title_inverted_index:
+                self.title_inverted_index[token] = set()
+            self.title_inverted_index[token].add(url_id)
+        for token, url_id in tqdm(
+            term_index_dict["anchor"], desc="Making anchor inverted index: "
+        ):
+            if not token in self.anchor_inverted_index:
+                self.anchor_inverted_index[token] = set()
+            self.anchor_inverted_index[token].add(url_id)
         print(
             "[INFO] Totally {} words in inverted index.".format(
                 len(self.inverted_index)
@@ -521,7 +561,51 @@ class IndexMaker:
             pickle.dump(
                 self.inverted_index, open(save_dir + "/inverted_index.pkl", "wb")
             )
+            pickle.dump(
+                self.title_inverted_index,
+                open(save_dir + "/title_inverted_index.pkl", "wb"),
+            )
+            pickle.dump(
+                self.anchor_inverted_index,
+                open(save_dir + "/anchor_inverted_index.pkl", "wb"),
+            )
         return None
+
+    def _load_page_rank(self, save_dir: str) -> bool:
+        if not os.path.exists(save_dir + "/page_rank.pkl"):
+            print("[INFO] No cached page rank found.")
+            return False
+        else:
+            import pickle
+
+            self.page_rank_score = pickle.load(open(save_dir + "/page_rank.pkl", "rb"))
+            print("[INFO] Cached page rank loaded.")
+            return True
+
+    def make_page_rank(self, save_dir: str) -> None:
+        assert HTML and len(HTML) > 0
+
+        import pickle
+        import networkx as nx
+
+        self.page_rank_score = dict[int, float]()
+        G = nx.DiGraph()
+        for url in HTML.keys():
+            G.add_node(self.url2index[url])
+
+        # Add edges to the graph
+        for url, soup in HTML.items():
+            id = self.url2index[url]
+            for link in soup.find_all("a"):
+                href = link.get("href")
+                if href in HTML.keys():
+                    G.add_edge(id, self.url2index[href])
+
+        # Calculate pagerank
+        self.page_rank_score = nx.pagerank(G)
+        print(self.page_rank_score)
+        with open(save_dir + "/page_rank.pkl", "wb") as f:
+            pickle.dump(self.page_rank_score, f)
 
     def _using_clean_words(
         self,

@@ -1,8 +1,10 @@
 __pycache__/
 .pytest_cache/
 .vscode/
+.DS_Store
 all_html/
 cache/
-IR-evaluator-client/
+field_dict/
+evaluate/
 html/
 stopwords/

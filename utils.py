@@ -52,7 +52,7 @@ def url_norm(url: str) -> str:
 
 
 def clean_front(url: str) -> str:
-    if "http" in url:
+    if "http" in url and "://" in url:
         while not url.startswith("http"):
             url = url[1:]
         assert url.startswith("http://") or url.startswith("https://")
