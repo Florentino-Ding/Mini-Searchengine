@@ -341,6 +341,13 @@ class TextTransformer:
                 self.term_frequency = pickle.load(
                     open(term_index_dir + "/term_frequency.pkl", "rb")
                 )
+            if (
+                not hasattr(self, "anchor_term_frequency")
+                or not self.anchor_term_frequency
+            ):
+                self.anchor_term_frequency = pickle.load(
+                    open(term_index_dir + "/anchor_term_frequency.pkl", "rb")
+                )
             print(
                 "[INFO] Totally {} tokens were detected.".format(len(self.term_index))
             )
@@ -414,6 +421,7 @@ class TextTransformer:
         self.index2url = dict[int, str]()
         self.url2index = dict[str, int]()
         self.term_frequency = dict[int, dict[str, int]]()
+        self.anchor_term_frequency = dict[int, dict[str, int]]()
         url_id = 0
         for url, html in tqdm(HTML.items(), desc="Making term-pages pairs: "):
             self.index2url[url_id] = url
@@ -442,10 +450,10 @@ class TextTransformer:
                 for content in anchor:
                     for token in jieba.cut_for_search(process_text(content.text)):
                         self.term_index_anchor.append((token, url_id))
-                        if url_id not in self.term_frequency:
-                            self.term_frequency[url_id] = dict()
-                        self.term_frequency[url_id][token] = (
-                            self.term_frequency[url_id].get(token, 0) + 1
+                        if url_id not in self.anchor_term_frequency:
+                            self.anchor_term_frequency[url_id] = dict()
+                        self.anchor_term_frequency[url_id][token] = (
+                            self.anchor_term_frequency[url_id].get(token, 0) + 1
                         )
             url_id += 1
         print("[INFO] Totally {} tokens were detected.".format(+len(self.term_index)))
@@ -461,12 +469,15 @@ class TextTransformer:
             pickle.dump(
                 self.term_frequency, open(save_dir + "/term_frequency.pkl", "wb")
             )
+            pickle.dump(
+                self.anchor_term_frequency,
+                open(save_dir + "/anchor_term_frequency.pkl", "wb"),
+            )
         return None
 
     def _using_clean_words(
         self,
         stopwords: Optional[set[str]] = None,
-        mode: Literal["current", "learned"] = "current",
     ) -> None:
         import pickle
 
@@ -474,21 +485,34 @@ class TextTransformer:
             self.cleaned_term_frequency = pickle.load(
                 open(self.cache_dir + "/" + "cleaned_term_frequency.pkl", "rb")
             )
-        if str(mode) == "current":
-            assert stopwords
-        else:
-            stopwords = set[str]()
-            raise NotImplementedError
-        assert hasattr(self, "term_index_dict")
+        if os.path.exists(self.cache_dir + "/" + "cleaned_anchor_term_frequency.pkl"):
+            self.cleaned_anchor_term_frequency = pickle.load(
+                open(self.cache_dir + "/" + "cleaned_anchor_term_frequency.pkl", "rb")
+            )
+        assert stopwords
+        assert hasattr(self, "term_index_dict") and stopwords
         import copy
 
-        self.cleaned_term_frequency = copy.deepcopy(self.term_frequency)
-        for url_id, term_frequency in self.cleaned_term_frequency.items():
-            for word in stopwords:
-                if word in term_frequency:
-                    del term_frequency[word]
-        with open(self.cache_dir + "/" + "cleaned_term_frequency.pkl", "wb") as f:
-            pickle.dump(self.cleaned_term_frequency, f)
+        if not hasattr(self, "cleaned_term_frequency"):
+            self.cleaned_term_frequency = copy.deepcopy(self.term_frequency)
+            for url_id, term_frequency in self.cleaned_term_frequency.items():
+                for word in stopwords:
+                    if word in term_frequency:
+                        del term_frequency[word]
+            with open(self.cache_dir + "/" + "cleaned_term_frequency.pkl", "wb") as f:
+                pickle.dump(self.cleaned_term_frequency, f)
+        if not hasattr(self, "cleaned_anchor_term_frequency"):
+            self.cleaned_anchor_term_frequency = copy.deepcopy(
+                self.anchor_term_frequency
+            )
+            for url_id, term_frequency in self.cleaned_anchor_term_frequency.items():
+                for word in stopwords:
+                    if word in term_frequency:
+                        del term_frequency[word]
+            with open(
+                self.cache_dir + "/" + "cleaned_anchor_term_frequency.pkl", "wb"
+            ) as f:
+                pickle.dump(self.cleaned_anchor_term_frequency, f)
 
 
 class IndexMaker:
@@ -511,17 +535,47 @@ class IndexMaker:
     def _load_inverted_index(self, save_dir: str) -> bool:
         import pickle
 
+        ok = True
         if not os.path.exists(save_dir + "/inverted_index.pkl"):
             print("[INFO] No cached inverted index found.")
-            return False
-        print("[INFO] Found cached inverted index, loading...")
-        self.inverted_index = pickle.load(open(save_dir + "/inverted_index.pkl", "rb"))
-        print(
-            "[INFO] Totally {} tokens in inverted index.".format(
-                len(self.inverted_index)
+            ok = False
+        else:
+            print("[INFO] Found cached inverted index, loading...")
+            self.inverted_index = pickle.load(
+                open(save_dir + "/inverted_index.pkl", "rb")
             )
-        )
-        return True
+            print(
+                "[INFO] Totally {} tokens in inverted index.".format(
+                    len(self.inverted_index)
+                )
+            )
+        if not os.path.exists(save_dir + "/title_inverted_index.pkl"):
+            print("[INFO] No cached title inverted index found.")
+            ok = False
+        else:
+            print("[INFO] Found cached title inverted index, loading...")
+            self.title_inverted_index = pickle.load(
+                open(save_dir + "/title_inverted_index.pkl", "rb")
+            )
+            print(
+                "[INFO] Totally {} tokens in title inverted index.".format(
+                    len(self.title_inverted_index)
+                )
+            )
+        if not os.path.exists(save_dir + "/anchor_inverted_index.pkl"):
+            print("[INFO] No cached anchor inverted index found.")
+            ok = False
+        else:
+            print("[INFO] Found cached anchor inverted index, loading...")
+            self.anchor_inverted_index = pickle.load(
+                open(save_dir + "/anchor_inverted_index.pkl", "rb")
+            )
+            print(
+                "[INFO] Totally {} tokens in anchor inverted index.".format(
+                    len(self.anchor_inverted_index)
+                )
+            )
+        return ok
 
     def _make_inverted_index(
         self,
@@ -531,44 +585,42 @@ class IndexMaker:
         import pickle
         from tqdm import tqdm
 
-        self.inverted_index = dict[str, set[int]]()
-        self.title_inverted_index = dict[str, set[int]]()
-        self.anchor_inverted_index = dict[str, set[int]]()
-        for token, url_id in tqdm(
-            term_index_dict["text"], desc="Making text inverted index: "
-        ):
-            if not token in self.inverted_index:
-                self.inverted_index[token] = set()
-            self.inverted_index[token].add(url_id)
-        for token, url_id in tqdm(
-            term_index_dict["title"], desc="Making title inverted index: "
-        ):
-            if not token in self.title_inverted_index:
-                self.title_inverted_index[token] = set()
-            self.title_inverted_index[token].add(url_id)
-        for token, url_id in tqdm(
-            term_index_dict["anchor"], desc="Making anchor inverted index: "
-        ):
-            if not token in self.anchor_inverted_index:
-                self.anchor_inverted_index[token] = set()
-            self.anchor_inverted_index[token].add(url_id)
-        print(
-            "[INFO] Totally {} words in inverted index.".format(
-                len(self.inverted_index)
-            )
-        )
-        if save_dir:
+        if not hasattr(self, "inverted_index"):
+            self.inverted_index = dict[str, set[int]]()
+            for token, url_id in tqdm(
+                term_index_dict["text"], desc="Making text inverted index: "
+            ):
+                if not token in self.inverted_index:
+                    self.inverted_index[token] = set()
+                self.inverted_index[token].add(url_id)
             pickle.dump(
                 self.inverted_index, open(save_dir + "/inverted_index.pkl", "wb")
             )
+        if not hasattr(self, "title_inverted_index"):
+            self.title_inverted_index = dict[str, set[int]]()
+            for token, url_id in tqdm(
+                term_index_dict["title"], desc="Making title inverted index: "
+            ):
+                if not token in self.title_inverted_index:
+                    self.title_inverted_index[token] = set()
+                self.title_inverted_index[token].add(url_id)
             pickle.dump(
                 self.title_inverted_index,
                 open(save_dir + "/title_inverted_index.pkl", "wb"),
             )
+        if not hasattr(self, "anchor_inverted_index"):
+            self.anchor_inverted_index = dict[str, set[int]]()
+            for token, url_id in tqdm(
+                term_index_dict["anchor"], desc="Making anchor inverted index: "
+            ):
+                if not token in self.anchor_inverted_index:
+                    self.anchor_inverted_index[token] = set()
+                self.anchor_inverted_index[token].add(url_id)
             pickle.dump(
                 self.anchor_inverted_index,
                 open(save_dir + "/anchor_inverted_index.pkl", "wb"),
             )
+        print("[INFO] Finish making all inverted index.")
         return None
 
     def _load_page_rank(self, save_dir: str) -> bool:
@@ -610,25 +662,54 @@ class IndexMaker:
     def _using_clean_words(
         self,
         stopwords: Optional[set[str]] = None,
-        mode: Literal["current", "learned"] = "current",
     ) -> None:
         import pickle
+        import copy
 
         if os.path.exists(self.cache_dir + "/" + "cleaned_inverted_index.pkl"):
             self.cleaned_inverted_index = pickle.load(
                 open(self.cache_dir + "/" + "cleaned_inverted_index.pkl", "rb")
             )
-        if str(mode) == "current":
-            assert stopwords
         else:
-            stopwords = set[str]()
-            raise NotImplementedError
-        assert hasattr(self, "inverted_index")
-        import copy
-
-        self.cleaned_inverted_index = copy.deepcopy(self.inverted_index)
-        for word in stopwords:
-            if word in self.cleaned_inverted_index:
-                del self.cleaned_inverted_index[word]
-        with open(self.cache_dir + "/" + "cleaned_inverted_index.pkl", "wb") as f:
-            pickle.dump(self.cleaned_inverted_index, f)
+            assert stopwords
+            self.cleaned_inverted_index = copy.deepcopy(self.inverted_index)
+            for word in stopwords:
+                if word in self.cleaned_inverted_index:
+                    del self.cleaned_inverted_index[word]
+            with open(self.cache_dir + "/" + "cleaned_inverted_index.pkl", "wb") as f:
+                pickle.dump(self.cleaned_inverted_index, f)
+        if os.path.exists(self.cache_dir + "/" + "cleaned_title_inverted_index.pkl"):
+            self.cleaned_title_inverted_index = pickle.load(
+                open(self.cache_dir + "/" + "cleaned_title_inverted_index.pkl", "rb")
+            )
+        else:
+            assert stopwords
+            self.cleaned_title_inverted_index = copy.deepcopy(self.title_inverted_index)
+            for word in stopwords:
+                if word in self.cleaned_title_inverted_index:
+                    del self.cleaned_title_inverted_index[word]
+            with open(
+                self.cache_dir + "/" + "cleaned_title_inverted_index.pkl", "wb"
+            ) as f:
+                pickle.dump(self.cleaned_title_inverted_index, f)
+        if os.path.exists(self.cache_dir + "/" + "cleaned_anchor_inverted_index.pkl"):
+            self.cleaned_anchor_inverted_index = pickle.load(
+                open(self.cache_dir + "/" + "cleaned_anchor_inverted_index.pkl", "rb")
+            )
+        else:
+            assert stopwords
+            self.cleaned_anchor_inverted_index = copy.deepcopy(
+                self.anchor_inverted_index
+            )
+            for word in stopwords:
+                if word in self.cleaned_anchor_inverted_index:
+                    del self.cleaned_anchor_inverted_index[word]
+            with open(
+                self.cache_dir + "/" + "cleaned_anchor_inverted_index.pkl", "wb"
+            ) as f:
+                pickle.dump(self.cleaned_anchor_inverted_index, f)
+        assert (
+            hasattr(self, "cleaned_inverted_index")
+            and hasattr(self, "cleaned_title_inverted_index")
+            and hasattr(self, "cleaned_anchor_inverted_index")
+        )

@@ -4,6 +4,8 @@ __pycache__/
 .DS_Store
 all_html/
 cache/
+word2vec/
+sgns.merge.word.bz2
 field_dict/
 evaluate/
 html/

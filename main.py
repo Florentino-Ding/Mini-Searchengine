@@ -8,11 +8,7 @@ os.chdir(BASE_DIR)
 DEFAULT_CONTINUE = True
 
 engine = SearchEngine(
-    [""],
-    [""],
-    "html",
-    "cache",
-    "stopwords/baidu_stopwords.txt",
+    [""], [""], "html", "cache", "stopwords/baidu_stopwords.txt", "search"
 )
 engine.warm_up_for_search()
 
