@@ -22,7 +22,7 @@ def get_args() -> dict[str, Union[str, list[str], int]]:
     except getopt.GetoptError:
         print("GetoptError")
         sys.exit(1)
-    arg_dict = dict()
+    arg_dict = {}
     for opt, arg in opt_list:
         if opt == "--target":
             arg_dict["target"] = arg
@@ -41,10 +41,7 @@ def get_args() -> dict[str, Union[str, list[str], int]]:
 
 
 def url_in_scope(url: str, scope: list[str]) -> bool:
-    for item in scope:
-        if item in url:
-            return True
-    return False
+    return any(item in url for item in scope)
 
 
 def url_norm(url: str) -> str:
@@ -62,7 +59,7 @@ def clean_front(url: str) -> str:
             url = url[5:]
         elif url.startswith("/"):
             url = url[1:]
-        return "http://" + url
+        return f"http://{url}"
 
 
 def clean_rear(url: str) -> str:
@@ -72,7 +69,7 @@ def clean_rear(url: str) -> str:
         url_list = url.split("/")
         return "/".join(url_list[:-1]) + "/"
     elif url.endswith(".com") or url.endswith(".cn"):
-        return url + "/"
+        return f"{url}/"
     else:
         return url
 
@@ -84,15 +81,14 @@ def clean_file_format(url: str) -> str:
 def url_join(base_url: str, rear: Optional[str] = None) -> str:
     base_url = clean_rear(base_url)
     base_url = url_norm(base_url)
-    if rear:
-        # rear = clean_rear(rear)
-        if rear.startswith("/"):
-            rear = rear[1:]
-        if base_url.endswith("/"):
-            base_url = base_url[:-1]
-        return base_url + "/" + rear
-    else:
+    if not rear:
         return base_url
+    # rear = clean_rear(rear)
+    if rear.startswith("/"):
+        rear = rear[1:]
+    if base_url.endswith("/"):
+        base_url = base_url[:-1]
+    return f"{base_url}/{rear}"
 
 
 def simplifyPath(path: str) -> str:
@@ -121,9 +117,7 @@ def simplifyPath(path: str) -> str:
 
 
 def get_title(html: bs4.BeautifulSoup):
-    if html.head is None:
-        return ""
-    return html.head.text
+    return "" if html.head is None else html.head.text
 
 
 def get_text(html: bs4.BeautifulSoup) -> str:
@@ -133,8 +127,7 @@ def get_text(html: bs4.BeautifulSoup) -> str:
 def process_text(text: str) -> str:
     text = text.replace("\n", "")
     text = text.replace("\t", "")
-    text = text.replace(" ", "")
-    return text
+    return text.replace(" ", "")
 
 
 def process_html(html: bs4.BeautifulSoup) -> tuple[str, str]:
@@ -148,9 +141,9 @@ def save_content(page_list: dict[str, bs4.BeautifulSoup], dir: str = "") -> None
     for url, html in page_list.items():
         title, text = process_html(html)
         page_content[url] = (title, text)
-    pickle.dump(page_content, open(dir + "content.pkl", "wb"))
+    pickle.dump(page_content, open(f"{dir}content.pkl", "wb"))
 
 
 def read_content(dir: str = "") -> dict[str, tuple[str, str]]:
-    assert os.path.exists(dir + "/content.pkl")
-    return pickle.load(open(dir + "/content.pkl", "rb"))
+    assert os.path.exists(f"{dir}/content.pkl")
+    return pickle.load(open(f"{dir}/content.pkl", "rb"))

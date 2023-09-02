@@ -1,8 +1,6 @@
 import os
-from typing import Optional
+import gensim.models.keyedvectors as keyedvectors
 import torch
-from gensim.models import keyedvectors
-
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -15,11 +13,11 @@ from query_processor import *
 class SearchEngine(object):
     def __init__(
         self,
-        start_url: list[str],
-        scope: list[str],
-        html_database: str,
-        cache_dir: str,
-        stopwords_dir: Optional[str] = None,
+        start_url: Optional[str] = None,
+        scope: Optional[list[str]] = None,
+        html_database: Optional[str] = None,
+        cache_dir: str = "cache",
+        stopwords_dir: Optional[str] = "stopwords/baidu_stopwords.txt",
         mode: Literal["search", "debug"] = "search",
     ) -> None:
         import jieba
@@ -35,48 +33,44 @@ class SearchEngine(object):
         self.mode = mode
         self.tokenizer("warm up")
 
-    def warm_up_for_shell(self) -> None:
+    def warm_up(self) -> None:
         if not hasattr(self, "transformer") or not hasattr(self, "index_maker"):
             self._prepare_essential()
-        self._using_clean_words(self.transformer.stopwords)
-        self._prepare_word2vec()
-
-    def warm_up_for_web(self) -> None:
-        if not hasattr(self, "transformer") or not hasattr(self, "index_maker"):
-            self._prepare_essential()
-        self._using_clean_words(self.transformer.stopwords)
+        self._using_clean_words(self.feature_extractor.stopwords)
         self._prepare_word2vec()
 
     def crawl(self) -> None:
         from main import HEADERS
 
+        assert (
+            self.start_url is not None
+            and self.scope is not None
+            and self.html_database is not None
+        )
         for url in self.start_url:
             robot = WebCrawl(url, self.scope, HEADERS, self.html_database)
             robot.crawl()
 
-    def _prepare_term_index(self) -> None:
-        self.transformer = TextTransformer(
-            self.html_database,
-            self.cache_dir,
-            self.stopwords_dir,
-        )
-        self.transformer.prepare_essential(self.mode)  # type: ignore
-
     def _prepare_essential(self) -> None:
-        if not hasattr(self, "transformer"):
-            self._prepare_term_index()
+        if not hasattr(self, "feature_extractor"):
+            self.feature_extractor = FeatureExactor(
+                self.html_database,
+                self.cache_dir,
+                self.stopwords_dir,
+            )
+            self.feature_extractor.prepare_essential(self.mode)  # type: ignore
         if not hasattr(self, "index_maker"):
             self.index_maker = IndexMaker(
                 self.cache_dir,
-                self.transformer.term_index_dict,
-                self.transformer.url2index,
+                self.feature_extractor.term_index_dict,
+                self.feature_extractor.url2index,
             )
             self.index_maker.prepare_essential()
 
     def _prepare_word2vec(self) -> None:
-        if os.path.exists(os.path.join(self.cache_dir, "word2vec.pkl")):
-            import pickle
+        import pickle
 
+        if os.path.exists(os.path.join(self.cache_dir, "word2vec.pkl")):
             self.word2vec_model = pickle.load(
                 open(os.path.join(self.cache_dir, "word2vec.pkl"), "rb")
             )
@@ -88,8 +82,6 @@ class SearchEngine(object):
                 encoding="utf-8",
                 unicode_errors="ignore",
             )
-            import pickle
-
             pickle.dump(
                 self.word2vec_model,
                 open(os.path.join(self.cache_dir, "word2vec.pkl"), "wb"),
@@ -102,16 +94,16 @@ class SearchEngine(object):
     ) -> None:
         assert (
             hasattr(self, "transformer")
-            and hasattr(self.transformer, "stopwords")
-            and hasattr(self.transformer, "term_frequency")
+            and hasattr(self.feature_extractor, "stopwords")
+            and hasattr(self.feature_extractor, "term_frequency")
             and hasattr(self.index_maker, "inverted_index")
         )
         if not hasattr(self.index_maker, "cleaned_inverted_index"):
             self.index_maker._using_clean_words(stopwords)
-        if not hasattr(self.transformer, "cleaned_term_frequency"):
-            self.transformer._using_clean_words(stopwords)
+        if not hasattr(self.feature_extractor, "cleaned_term_frequency"):
+            self.feature_extractor._using_clean_words(stopwords)
 
-    def search(
+    def get_result_urls(
         self,
         user_query,
         top_k=20,
@@ -125,16 +117,15 @@ class SearchEngine(object):
             self.index_maker.cleaned_inverted_index,
             self.index_maker.cleaned_title_inverted_index,
             self.index_maker.cleaned_anchor_inverted_index,
-            self.transformer.index2url,
-            self.transformer.cleaned_term_frequency,
-            self.transformer.cleaned_anchor_term_frequency,
+            self.feature_extractor.index2url,
+            self.feature_extractor.cleaned_term_frequency,
+            self.feature_extractor.cleaned_anchor_term_frequency,
             self.index_maker.page_rank_score,  # type: ignore
             self.word2vec_model,
         )
-        result = self.page_ranker.ranked_page()
-        return result
+        return self.page_ranker.ranked_pages()
 
-    def search_for_web(
+    def get_detailed_result(
         self,
         user_query,
         top_k=20,
@@ -148,13 +139,13 @@ class SearchEngine(object):
             self.index_maker.cleaned_inverted_index,
             self.index_maker.cleaned_title_inverted_index,
             self.index_maker.cleaned_anchor_inverted_index,
-            self.transformer.index2url,
-            self.transformer.cleaned_term_frequency,
-            self.transformer.cleaned_anchor_term_frequency,
+            self.feature_extractor.index2url,
+            self.feature_extractor.cleaned_term_frequency,
+            self.feature_extractor.cleaned_anchor_term_frequency,
             self.index_maker.page_rank_score,  # type: ignore
             self.word2vec_model,
         )
-        result = self.page_ranker.ranked_page(mode="web")  # type: ignore
+        result = self.page_ranker.ranked_pages(mode="record")
         web_result = list[dict[str, str]]()
         from index_processor import HTML
         from utils import process_text
@@ -166,7 +157,7 @@ class SearchEngine(object):
             else:
                 title = process_text(title.get_text())
                 if len(title) > 40:
-                    title = title[:40] + "..."
+                    title = f"{title[:40]}..."
             summary = process_text(HTML[url].get_text())[:100]
             web_result.append(
                 {

@@ -1,21 +1,15 @@
 {
+    // 使用 IntelliSense 了解相关属性。 
+    // 悬停以查看现有属性的描述。
+    // 欲了解更多信息，请访问: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
     "configurations": [
         {
-            "name": "网页信息检索：自定参数的调试",
+            "name": "Python: 从main.py启动搜索引擎",
             "type": "python",
             "request": "launch",
-            "program": "/Users/dingluran/Projects/网页信息检索/main.py",
+            "program": "main.py",
             "console": "integratedTerminal",
-            "args": [
-                "--target",
-                "m",
-                "--page",
-                "https://rdzs.ruc.edu.cn/",
-                "--scope",
-                "http://ai.ruc.edu.cn,https://rdzs.ruc.edu.cn/,https://gsai.ruc.edu.cn/",
-                "--html_dir",
-                "html",
-            ],
             "justMyCode": true
         }
     ]

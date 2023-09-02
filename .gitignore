@@ -1,12 +1,14 @@
 __pycache__/
 .pytest_cache/
 .vscode/
+.history/
+.idea/
 .DS_Store
-all_html/
 cache/
 word2vec/
 sgns.merge.word.bz2
 field_dict/
 evaluate/
+!webUI/html/
 html/
 stopwords/

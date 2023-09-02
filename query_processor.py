@@ -1,5 +1,5 @@
 from typing import Literal
-from gensim.models import keyedvectors
+import gensim.models
 import torch
 from torch import nn
 from torch.nn import functional as F
@@ -42,7 +42,7 @@ class PageRanker:
         term_frequency: dict[int, dict[str, int]],
         anchor_term_frequency: dict[int, dict[str, int]],
         page_rank_score: dict[int, float],
-        word2vec_model: keyedvectors.Word2VecKeyedVectors,
+        word2vec_model: gensim.models.keyedvectors.Word2VecKeyedVectors,
     ):
         self.query_list = query_set
         self.top_k = top_k
@@ -70,6 +70,30 @@ class PageRanker:
         return result
 
     def _tf_score(
+        self,
+        term: str,
+        doc_id: int,
+        normalize: bool = True,
+        consider_include: bool = False,
+    ) -> float:
+        import math
+
+        doc_freq = self.term_frequency[doc_id]
+        if not term in doc_freq:
+            return 0
+        if consider_include:
+            appear_time = 0
+            for term_in_doc in doc_freq:
+                if term in term_in_doc:
+                    appear_time += doc_freq[term_in_doc]
+        else:
+            appear_time = doc_freq[term]
+        if normalize:
+            return 1 + math.log10((appear_time / sum(doc_freq.values())))
+        else:
+            return 1 + math.log10((appear_time))
+
+    def _custom_tf_score(
         self,
         term: str,
         doc_id: int,
@@ -174,13 +198,13 @@ class PageRanker:
             if term not in self.word2vec_model:
                 continue
             similar_terms, _ = self.word2vec_model.most_similar(term)[0]
-            if not similar_terms in self.inverted_index.keys():
+            if similar_terms not in self.inverted_index.keys():
                 continue
             else:
                 result_query.append(similar_terms)
         return result_query
 
-    def ranked_page(
+    def ranked_pages(
         self, mode: Literal["record", "not-record"] = "not-record"
     ) -> list[str]:
         import math
@@ -195,7 +219,9 @@ class PageRanker:
         for idx, page_url_id in enumerate(url_ids):
             raw_tf_idf_score[idx][0] = sum(
                 [
-                    self._tf_score(term, page_url_id) * self._idf_score(term)
+                    self._custom_tf_score(term, page_url_id)
+                    * self._idf_score(term)
+                    * math.log10(len(term))
                     for term in self.query_list
                 ]
             )
@@ -211,6 +237,7 @@ class PageRanker:
                 [
                     self._anchor_tf_score(term, page_url_id)
                     * self._anchor_idf_score(term)
+                    * math.log10(len(term))
                     for term in self.query_list
                 ]
             )
@@ -264,9 +291,9 @@ class RankNet(nn.Module):
         self.softmax = F.softmax
 
     def init_weights(self):
-        nn.init.constant_(self.tf_idf_sum.weight, 0)
+        nn.init.constant_(self.tf_idf_sum.weight, 1e-5)
         nn.init.constant_(self.tf_idf_sum_inner.weight, 1)
-        nn.init.constant_(self.method_sum.weight, 0)
+        nn.init.constant_(self.method_sum.weight, 1e-5)
         nn.init.constant_(self.method_sum_inner.weight, 1)
 
     def forward(self, raw_tf_idf_score, page_rank_score) -> torch.Tensor:
