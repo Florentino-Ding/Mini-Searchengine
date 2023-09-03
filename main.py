@@ -7,7 +7,7 @@ HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/
 os.chdir(BASE_DIR)
 DEFAULT_CONTINUE = False
 
-search_engine = SearchEngine(mode="debug")
+search_engine = SearchEngine()
 search_engine.warm_up()
 
 
