@@ -3,6 +3,8 @@ __pycache__/
 .vscode/
 .history/
 .idea/
+final-report/
+.gitingore
 .DS_Store
 cache/
 word2vec/

@@ -98,6 +98,9 @@ class SearchEngine(object):
             top_k,
             self.index_maker.inverted_index,
             self.feature_extractor.all_index2info(),
+            self.feature_extractor.head_term_frequency,
+            self.feature_extractor.text_term_frequency,
+            self.feature_extractor.anchor_term_frequency,
             self.index_maker.page_rank_score,  # type: ignore
             self.word2vec_model,
         )
